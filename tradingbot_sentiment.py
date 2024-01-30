@@ -9,31 +9,36 @@ from timedelta import Timedelta
 from finbert_utils import estimate_sentiment
 from dotenv import load_dotenv
 import os
+import json
 
 load_dotenv()
 API_KEY = os.getenv("ALPACA_Key")
 API_SECRET = os.getenv("ALPACA_Secret")
 BASE_URL = os.getenv("ALPACA_BASE_URL")
-
+ALPACA_DATA_URL = "https://data.alpaca.markets"
 ALPACA_CREDS = {
-    "API_KEY":os.getenv("ALPACA_Key"),
-    "API_SECRET":os.getenv("ALPACA_Secret"),
+    "API_KEY": os.getenv("ALPACA_Key"),
+    "API_SECRET": os.getenv("ALPACA_Secret"),
     "PAPER": True
 }
 
+
 class MLTrader(Strategy):
-    def initialize(self, symbol:str="SPY", cash_at_risk:float=.5):
+    def initialize(self, symbol: str = "SPY", cash_at_risk: float = .5):
 
         self.symbol = symbol
         self.sleeptime = "24H"
         self.last_trade = None
         self.cash_at_risk = cash_at_risk
-        self.api = REST(base_url= os.getenv("ALPACA_BASE_URL"), key_id= os.getenv("ALPACA_Key"), secret_key= os.getenv("ALPACA_Secret"))
+        self.api = REST(base_url=os.getenv("ALPACA_BASE_URL"), key_id=os.getenv("ALPACA_Key"),
+                        secret_key=os.getenv("ALPACA_Secret"))
+        self.news_api = REST(base_url=os.getenv("ALPACA_DATA_URL"), key_id=os.getenv("ALPACA_Key"),
+                             secret_key=os.getenv("ALPACA_Secret"), api_version="v1beta1")
 
     def position_sizing(self):
         cash = self.get_cash()
         last_price = self.get_last_price(self.symbol)
-        quantity = round(cash * self.cash_at_risk / last_price,0)
+        quantity = round(cash * self.cash_at_risk / last_price, 0)
         return cash, last_price, quantity
 
     def get_dates(self):
@@ -41,35 +46,20 @@ class MLTrader(Strategy):
         three_days_prior = today - Timedelta(days=3)
         return today.strftime('%Y-%m-%d'), three_days_prior.strftime('%Y-%m-%d')
 
-
     def get_alpaca_news(self):
-        base_url = 'https://data.alpaca.markets/v1beta1/news'
-        params = {
-            'symbols': ','.join(self.symbol)
-        }
-
-        headers = {
-            'Apca-Api-Key-Id': API_KEY,
-            'Apca-Api-Secret-Key': API_SECRET
-        }
-
-        response = requests.get(base_url, headers=headers, params=params)
-
-        if response.status_code == 200:
-            data = response.json()
-
-            # Extract headlines
-            headlines = [news_item['headline'] for news_item in data['news']]
-            return headlines
-        else:
-            raise Exception(f'Failed to retrieve data: {response.status_code} - {response.reason}')
+        news = self.news_api.get(path=f'/news?symbols={self.symbol}')
+        print(news)
+        headlines = []
+        summaries = []
+        for news_item in news['news']:
+            headlines.append(news_item['headline'])
+            headlines.append(news_item['summary'])
+        print(headlines)
+        return headlines
 
     def get_sentiment(self):
         today, three_days_prior = self.get_dates()
-        news = self.api.get_news(symbol=self.symbol,
-                                 start=three_days_prior,
-                                 end=today)
-        news = [ev.__dict__["_raw"]["headline"] for ev in news]
+        news = self.get_alpaca_news()
         probability, sentiment = estimate_sentiment(news)
         return probability, sentiment
 
@@ -86,8 +76,8 @@ class MLTrader(Strategy):
                     quantity,
                     "buy",
                     type="bracket",
-                    take_profit_price=last_price*1.20,
-                    stop_loss_price=last_price*.95
+                    take_profit_price=last_price * 1.20,
+                    stop_loss_price=last_price * .95
                 )
                 self.submit_order(order)
                 self.last_trade = "buy"
@@ -99,12 +89,11 @@ class MLTrader(Strategy):
                     quantity,
                     "sell",
                     type="bracket",
-                    take_profit_price=last_price*.8,
-                    stop_loss_price=last_price*1.05
+                    take_profit_price=last_price * .8,
+                    stop_loss_price=last_price * 1.05
                 )
                 self.submit_order(order)
                 self.last_trade = "sell"
-
 
 
 if __name__ == "__main__":

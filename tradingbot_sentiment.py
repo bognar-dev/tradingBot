@@ -46,7 +46,7 @@ class MLTrader(Strategy):
         three_days_prior = today - Timedelta(days=3)
         return today.strftime('%Y-%m-%d'), three_days_prior.strftime('%Y-%m-%d')
 
-    def get_alpaca_news(self):
+    def get_alpaca_news(self,today, three_days_prior):
         news = self.news_api.get(path=f'/news?symbols={self.symbol}')
         print(news)
         headlines = []

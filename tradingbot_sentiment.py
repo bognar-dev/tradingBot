@@ -1,21 +1,18 @@
 from alpaca.broker import requests
+from alpaca.data import NewsRequest
 from lumibot.brokers import Alpaca
 from lumibot.backtesting import YahooDataBacktesting
 from lumibot.strategies.strategy import Strategy
 from lumibot.traders import Trader
 from datetime import datetime
-from alpaca_trade_api import REST
+from alpaca.trading.client import TradingClient
+from alpaca.data.historical.news import NewsClient
 from timedelta import Timedelta
 from finbert_utils import estimate_sentiment
 from dotenv import load_dotenv
 import os
-import json
 
 load_dotenv()
-API_KEY = os.getenv("ALPACA_Key")
-API_SECRET = os.getenv("ALPACA_Secret")
-BASE_URL = os.getenv("ALPACA_BASE_URL")
-ALPACA_DATA_URL = "https://data.alpaca.markets"
 ALPACA_CREDS = {
     "API_KEY": os.getenv("ALPACA_Key"),
     "API_SECRET": os.getenv("ALPACA_Secret"),
@@ -30,10 +27,8 @@ class MLTrader(Strategy):
         self.sleeptime = "24H"
         self.last_trade = None
         self.cash_at_risk = cash_at_risk
-        self.api = REST(base_url=os.getenv("ALPACA_BASE_URL"), key_id=os.getenv("ALPACA_Key"),
-                        secret_key=os.getenv("ALPACA_Secret"))
-        self.news_api = REST(base_url=os.getenv("ALPACA_DATA_URL"), key_id=os.getenv("ALPACA_Key"),
-                             secret_key=os.getenv("ALPACA_Secret"), api_version="v1beta1")
+        self.tradeClient = TradingClient(os.getenv("ALPACA_Key"), os.getenv("ALPACA_Secret"))
+        self.newsClient = NewsClient(os.getenv("ALPACA_Key"), os.getenv("ALPACA_Secret"))
 
     def position_sizing(self):
         cash = self.get_cash()
@@ -47,26 +42,32 @@ class MLTrader(Strategy):
         return today.strftime('%Y-%m-%d'), three_days_prior.strftime('%Y-%m-%d')
 
     def get_alpaca_news(self,today, three_days_prior):
-        news = self.news_api.get(path=f'/news?symbols={self.symbol}')
-        print(news)
+        newsRequest = NewsRequest(
+            symbols=self.symbol,
+            start=three_days_prior,
+            end=today,
+            limit=20
+        )
+        news = self.newsClient.get_news(newsRequest)
         headlines = []
         summaries = []
-        for news_item in news['news']:
-            headlines.append(news_item['headline'])
-            headlines.append(news_item['summary'])
-        print(headlines)
+
+        for news_item in news.news:
+            headlines.append(news_item.headline)
+            summaries.append(news_item.summary)
+
         return headlines
 
     def get_sentiment(self):
         today, three_days_prior = self.get_dates()
-        news = self.get_alpaca_news()
+        news = self.get_alpaca_news(today, three_days_prior)
         probability, sentiment = estimate_sentiment(news)
         return probability, sentiment
 
     def on_trading_iteration(self):
         cash, last_price, quantity = self.position_sizing()
         probability, sentiment = self.get_sentiment()
-
+        print(sentiment)
         if cash > last_price:
             if sentiment == "positive" and probability > .999:
                 if self.last_trade == "sell":
@@ -80,6 +81,7 @@ class MLTrader(Strategy):
                     stop_loss_price=last_price * .95
                 )
                 self.submit_order(order)
+                print("buying")
                 self.last_trade = "buy"
             elif sentiment == "negative" and probability > .999:
                 if self.last_trade == "buy":
@@ -93,12 +95,13 @@ class MLTrader(Strategy):
                     stop_loss_price=last_price * 1.05
                 )
                 self.submit_order(order)
+                print("selling")
                 self.last_trade = "sell"
 
 
 if __name__ == "__main__":
     print("Initializing MLTrader")
-    start_date = datetime(2020, 1, 1)
+    start_date = datetime(2023, 1, 1)
     end_date = datetime(2023, 12, 31)
     broker = Alpaca(ALPACA_CREDS)
     strategy = MLTrader(name='mlstrat', broker=broker,

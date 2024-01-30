@@ -194,9 +194,8 @@ def find_optimal_ma(symbol, ma_range):
 
 
 def main():
-    s = StockAnalyzer('AAPL', range(3, 50), 4, 3)
+    s = StockAnalyzer('META', range(3, 50), 4, 3)
     s.get_data()
-
     s.set_sma()
     s.generate_signals()
     s.calculate_profit()
@@ -206,7 +205,8 @@ def main():
     s.plot()
     s.find_optimal_ma()
     s.plot()
-
+    final_value = s.calc_invest_return(1)
+    print(f"Final value of investment: {final_value} Pounds")
 
 
 
